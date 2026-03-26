@@ -1,0 +1,5 @@
+.idea/
+ServiceStatusChecker/bin
+ServiceStatusChecker/appsettings.json
+ServiceStatusChecker/state.json
+ServiceStatusChecker/obj
