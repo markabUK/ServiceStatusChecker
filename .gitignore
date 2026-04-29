@@ -3,3 +3,4 @@ ServiceStatusChecker/bin
 ServiceStatusChecker/appsettings.json
 ServiceStatusChecker/state.json
 ServiceStatusChecker/obj
+ServiceStatusChecker/morning_report_state.json

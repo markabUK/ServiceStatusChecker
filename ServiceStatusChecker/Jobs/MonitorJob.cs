@@ -1,8 +1,9 @@
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Quartz;
+using ServiceStatusChecker.Services;
 
-namespace ServiceStatusChecker;
+namespace ServiceStatusChecker.Jobs;
 
 public class MonitorJob : IJob
 {

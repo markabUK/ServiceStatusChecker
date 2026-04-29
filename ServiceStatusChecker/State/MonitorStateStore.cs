@@ -1,7 +1,7 @@
 using System.Collections.Concurrent;
 using ServiceStatusChecker.State;
 
-namespace ServiceStatusChecker;
+namespace ServiceStatusChecker.State;
 
 public class MonitorStateStore
 {

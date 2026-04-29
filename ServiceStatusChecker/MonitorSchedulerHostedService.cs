@@ -7,7 +7,9 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Quartz;
 using Quartz.Impl.Matchers;
+using ServiceStatusChecker.Jobs;
 using ServiceStatusChecker.Models;
+using ServiceStatusChecker.Services;
 
 namespace ServiceStatusChecker;
 
@@ -18,34 +20,73 @@ public class MonitorSchedulerHostedService : IHostedService
     private readonly ILogger<MonitorSchedulerHostedService> _logger;
     private IScheduler? _scheduler;
     private IDisposable? _changeSubscription;
+    private readonly MorningReportService _morningReportService;
+    private readonly IOptionsMonitor<MorningReportConfig> _morningReportConfig;
 
     public MonitorSchedulerHostedService(
         ISchedulerFactory schedulerFactory,
         IOptionsMonitor<MonitorConfigCollection> monitorOptions,
+        MorningReportService morningReportService,
+        IOptionsMonitor<MorningReportConfig> morningReportConfig,
         ILogger<MonitorSchedulerHostedService> logger)
     {
         _schedulerFactory = schedulerFactory;
         _monitorOptions = monitorOptions;
+        _morningReportService = morningReportService;
+        _morningReportConfig = morningReportConfig;
         _logger = logger;
     }
+
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         _scheduler = await _schedulerFactory.GetScheduler(cancellationToken);
         await _scheduler.Start(cancellationToken);
-        
+
         _logger.LogWarning("Scheduler InStandbyMode: {Standby}", _scheduler.InStandbyMode);
-        
 
         await ApplyConfigAsync(_monitorOptions.CurrentValue, cancellationToken);
+
+        // Schedule the morning report job
+        await ScheduleMorningReportAsync(cancellationToken);
+
+        // On startup: send morning report if not yet sent today
+        _logger.LogInformation("Checking if morning report is due on startup...");
+        await _morningReportService.SendIfDueAsync();
 
         _changeSubscription = _monitorOptions.OnChange((cfg, _) =>
         {
             _logger.LogInformation("Configuration file changed. Reloading monitors...");
-            // Block here to avoid fire-and-forget races
             ApplyConfigAsync(cfg, CancellationToken.None).GetAwaiter().GetResult();
         });
     }
+
+    private async Task ScheduleMorningReportAsync(CancellationToken token)
+    {
+        if (!_morningReportConfig.CurrentValue.Enabled)
+        {
+            _logger.LogInformation("Morning report is disabled. Skipping job registration.");
+            return;
+        }
+
+        string cron = _morningReportConfig.CurrentValue.Cron;
+
+        JobKey jobKey = new JobKey("MorningReport", "Reports");
+
+        IJobDetail job = JobBuilder.Create<MorningReportJob>()
+            .WithIdentity(jobKey)
+            .Build();
+
+        ITrigger trigger = TriggerBuilder.Create()
+            .WithIdentity("MorningReport-trigger", "Reports")
+            .WithCronSchedule(cron)
+            .ForJob(jobKey)
+            .Build();
+
+        await _scheduler!.ScheduleJob(job, trigger, token);
+        _logger.LogInformation("Morning report job scheduled with cron: {Cron}", cron);
+    }
+
 
     public async Task StopAsync(CancellationToken cancellationToken)
     {

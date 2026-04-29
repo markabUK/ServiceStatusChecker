@@ -8,8 +8,10 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Quartz;
+using ServiceStatusChecker.Jobs;
 using ServiceStatusChecker.Models;
 using ServiceStatusChecker.Notifiers;
+using ServiceStatusChecker.Services;
 using ServiceStatusChecker.State;
 
 namespace ServiceStatusChecker;
@@ -70,6 +72,12 @@ public static class Program
                 // Monitor + Job
                 services.AddTransient<ServiceMonitor>();
                 services.AddTransient<MonitorJob>();
+                
+                services.Configure<MorningReportConfig>(configuration.GetSection("MorningReport"));
+                services.AddSingleton<MorningReportStateStore>();
+                services.AddTransient<MorningReportService>();
+                services.AddTransient<MorningReportJob>();
+                
 
                 // QUARTZ 
                 services.AddQuartz();

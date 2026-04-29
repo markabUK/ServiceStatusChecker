@@ -12,7 +12,7 @@ using ServiceStatusChecker.Models;
 using ServiceStatusChecker.Notifiers;
 using ServiceStatusChecker.State;
 
-namespace ServiceStatusChecker;
+namespace ServiceStatusChecker.Services;
 
 public class ServiceMonitor
 {
@@ -44,8 +44,9 @@ public class ServiceMonitor
                 attempt => TimeSpan.FromSeconds(Math.Pow(2, attempt)),
                 (result, timespan, retryCount, context) =>
                 {
-                    _logger.LogWarning("Retry {Retry} for {Operation}. Delay {Delay}.",
-                        retryCount, context.OperationKey, timespan);
+                    _logger.LogWarning("Retry {Retry} for monitor {MonitorName}. Delay {Delay}.",
+                        retryCount, context["MonitorName"], timespan);
+
                 });
     }
 
