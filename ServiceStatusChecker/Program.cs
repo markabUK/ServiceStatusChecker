@@ -65,6 +65,14 @@ public static class Program
                 // State store
                 services.AddSingleton<JsonStateStore>();
 
+                //Notifier body formatters
+                services.AddSingleton<IWebhookBodyFormatter, DefaultWebhookBodyFormatter>();
+                services.AddSingleton<IWebhookBodyFormatter, GoogleChatWebhookBodyFormatter>();
+                
+                services.AddSingleton<IMorningReportFormatter, DefaultMorningReportFormatter>();
+                services.AddSingleton<IMorningReportFormatter, GoogleChatMorningReportFormatter>();
+                
+                
                 // Notifiers
                 services.AddSingleton<INotifier, EmailNotifier>();
                 services.AddSingleton<INotifier, WebhookNotifier>();

@@ -13,7 +13,9 @@ namespace ServiceStatusChecker.Notifiers;
 
 public class WebhookNotifier : INotifier
 {
-    private readonly Dictionary<string, string> _webhooks;
+    private readonly Dictionary<string, WebhookConfig> _webhooks;
+    private readonly IReadOnlyDictionary<string, IWebhookBodyFormatter> _formatters;
+    private readonly IWebhookBodyFormatter _defaultFormatter;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<WebhookNotifier> _logger;
 
@@ -21,10 +23,16 @@ public class WebhookNotifier : INotifier
 
     public WebhookNotifier(
         IOptions<NotificationConfig> options,
+        IEnumerable<IWebhookBodyFormatter> formatters,
         IHttpClientFactory httpClientFactory,
         ILogger<WebhookNotifier> logger)
     {
         _webhooks = options.Value.Webhooks;
+
+        _formatters = formatters.ToDictionary(f => f.Name, StringComparer.OrdinalIgnoreCase);
+        if (!_formatters.TryGetValue("default", out _defaultFormatter!))
+            throw new InvalidOperationException("No webhook formatter named 'default' is registered.");
+
         Handles = _webhooks.Keys.ToArray();
         _httpClientFactory = httpClientFactory;
         _logger = logger;
@@ -34,41 +42,28 @@ public class WebhookNotifier : INotifier
 
     public async Task NotifyAsync(NotificationContext context, string channel)
     {
-        if (!_webhooks.TryGetValue(channel, out var url))
+        if (!_webhooks.TryGetValue(channel, out var webhook))
         {
             _logger.LogWarning("Webhook '{WebhookName}' not found in configuration.", channel);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(webhook.WebhookUrl))
+        {
+            _logger.LogWarning("Webhook '{WebhookName}' has no configured URL.", channel);
             return;
         }
 
         try
         {
             var client = _httpClientFactory.CreateClient();
+            var formatter = ResolveFormatter(channel, webhook);
+            string message = formatter.Format(context);
 
-            string bodySection = context.IncludeResponseBody
-                ? (context.ResponseBody ?? "(empty)")
-                : "**REDACTED**";
-
-            string message = $@"
-Service: {context.ServiceName}
-URL: {context.Url}
-Status: {(context.IsUp ? "UP" : "DOWN")}
-Time: {context.Timestamp:u}
-
-Error: {context.Error ?? "None"}
-Status Code: {context.StatusCode ?? "No response"}
-
-Response Body:
-{bodySection}
-";
-
-
-            var payload = JsonSerializer.Serialize(new
-            {
-                text = message
-            });
+            var payload = JsonSerializer.Serialize(new { text = message });
 
             using var content = new StringContent(payload, Encoding.UTF8, "application/json");
-            var response = await client.PostAsync(url, content);
+            var response = await client.PostAsync(webhook.WebhookUrl, content);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -79,9 +74,25 @@ Response Body:
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex,
+            _logger.LogError(
+                ex,
                 "Webhook '{WebhookName}' threw an exception while notifying {ServiceName}",
                 channel, context.ServiceName);
         }
+    }
+
+    private IWebhookBodyFormatter ResolveFormatter(string channel, WebhookConfig webhook)
+    {
+        if (string.IsNullOrWhiteSpace(webhook.Formatter))
+            return _defaultFormatter;
+
+        if (_formatters.TryGetValue(webhook.Formatter, out var formatter))
+            return formatter;
+
+        _logger.LogWarning(
+            "Webhook formatter '{Formatter}' not found for channel '{Channel}'. Falling back to default.",
+            webhook.Formatter, channel);
+
+        return _defaultFormatter;
     }
 }

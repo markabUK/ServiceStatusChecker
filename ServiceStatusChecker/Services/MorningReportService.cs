@@ -21,6 +21,8 @@ public class MorningReportService
     private readonly MorningReportConfig _reportConfig;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<MorningReportService> _logger;
+    private readonly IReadOnlyDictionary<string, IMorningReportFormatter> _formatters;
+    private readonly IMorningReportFormatter _defaultFormatter;
 
     public MorningReportService(
         JsonStateStore stateStore,
@@ -28,6 +30,7 @@ public class MorningReportService
         IOptions<MonitorConfigCollection> monitorOptions,
         IOptions<NotificationConfig> notificationOptions,
         IOptions<MorningReportConfig> reportOptions,
+        IEnumerable<IMorningReportFormatter> formatters,
         IHttpClientFactory httpClientFactory,
         ILogger<MorningReportService> logger)
     {
@@ -38,6 +41,9 @@ public class MorningReportService
         _reportConfig = reportOptions.Value;
         _httpClientFactory = httpClientFactory;
         _logger = logger;
+        _formatters = formatters.ToDictionary(f => f.Name, StringComparer.OrdinalIgnoreCase);
+        if (!_formatters.TryGetValue("default", out _defaultFormatter!))
+            throw new InvalidOperationException("No morning report formatter named 'default' is registered.");
     }
 
     /// <summary>
@@ -87,6 +93,7 @@ public class MorningReportService
 
         var sb = new StringBuilder();
         sb.AppendLine($"📋 Morning Service Status Report — {reportDate:dddd, MMMM d, yyyy}");
+        sb.AppendLine("Last status of monitored services from yesterday: ");
         sb.AppendLine(new string('─', 50));
 
         foreach (var monitor in monitors)
@@ -118,9 +125,13 @@ public class MorningReportService
         var tasks = new List<Task>();
         foreach (var channel in channels)
         {
-            if (_notificationConfig.Webhooks.TryGetValue(channel, out var webhookUrl))
+            if (_notificationConfig.Webhooks.TryGetValue(channel, out var webhook) &&
+                !string.IsNullOrWhiteSpace(webhook.WebhookUrl))
             {
-                tasks.Add(SendWebhookAsync(channel, webhookUrl, message));
+                var formatter = ResolveFormatter(channel, webhook.Formatter);
+                var formattedMessage = formatter.Format(message);
+                tasks.Add(SendWebhookAsync(channel, webhook.WebhookUrl, formattedMessage));
+
             }
             else
             {
@@ -151,4 +162,20 @@ public class MorningReportService
             _logger.LogError(ex, "Morning report webhook '{Channel}' threw an exception", channel);
         }
     }
+    
+    private IMorningReportFormatter ResolveFormatter(string channel, string? formatterName)
+    {
+        if (string.IsNullOrWhiteSpace(formatterName))
+            return _defaultFormatter;
+    
+        if (_formatters.TryGetValue(formatterName, out var formatter))
+            return formatter;
+    
+        _logger.LogWarning(
+            "Morning report formatter '{Formatter}' not found for channel '{Channel}'. Falling back to default.",
+            formatterName, channel);
+    
+        return _defaultFormatter;
+    }
+    
 }
