@@ -123,19 +123,26 @@ public class MorningReportService
         }
 
         var tasks = new List<Task>();
+        var monitorSnapshots = monitors.Select(m => new MorningReportMonitorSnapshot(
+            m.Name,
+            m.Url,
+            _stateStore.Get(m.Name)
+        )).ToList();
+
+        var reportContext = new MorningReportMessageContext(
+            reportDate,
+            DateTime.UtcNow,
+            monitorSnapshots
+        );
+
         foreach (var channel in channels)
         {
             if (_notificationConfig.Webhooks.TryGetValue(channel, out var webhook) &&
                 !string.IsNullOrWhiteSpace(webhook.WebhookUrl))
             {
                 var formatter = ResolveFormatter(channel, webhook.Formatter);
-                var formattedMessage = formatter.Format(message);
+                string formattedMessage = formatter.Format(reportContext);
                 tasks.Add(SendWebhookAsync(channel, webhook.WebhookUrl, formattedMessage));
-
-            }
-            else
-            {
-                _logger.LogWarning("Morning report: no webhook found for channel '{Channel}'", channel);
             }
         }
 

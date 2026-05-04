@@ -1,5 +1,5 @@
-using System;
 using System.Text;
+using ServiceStatusChecker.State;
 
 namespace ServiceStatusChecker.Services;
 
@@ -7,27 +7,28 @@ public class GoogleChatMorningReportFormatter : IMorningReportFormatter
 {
     public string Name => "google-chat";
 
-    public string Format(string baseMessage)
+    public string Format(MorningReportMessageContext context)
     {
-        var lines = baseMessage.Split(Environment.NewLine);
         var sb = new StringBuilder();
+        sb.AppendLine($"Morning Service Status Report - {context.ReportDate:dddd, MMMM d, yyyy}");
+        sb.AppendLine("Last status of monitored services from yesterday:");
+        sb.AppendLine(new string('-', 50));
 
-        foreach (var line in lines)
+        foreach (var monitor in context.Monitors)
         {
-            const string prefix = "   URL: ";
-            if (line.StartsWith(prefix, StringComparison.Ordinal))
+            string icon = monitor.State switch
             {
-                string url = line.Substring(prefix.Length).Trim();
-                if (!string.IsNullOrWhiteSpace(url))
-                {
-                    sb.AppendLine($"   Link: <{url}|Open endpoint>");
-                    continue;
-                }
-            }
+                ServiceState.Up => "OK",
+                ServiceState.Down => "DOWN",
+                _ => "UNKNOWN"
+            };
 
-            sb.AppendLine(line);
+            sb.AppendLine($"{icon} {monitor.Name}: {monitor.State}");
+            sb.AppendLine($"   Link: <{monitor.Url}|{monitor.Name} endpoint>");
         }
 
+        sb.AppendLine(new string('-', 50));
+        sb.AppendLine($"Generated at: {context.GeneratedAtUtc:u}");
         return sb.ToString();
     }
 }

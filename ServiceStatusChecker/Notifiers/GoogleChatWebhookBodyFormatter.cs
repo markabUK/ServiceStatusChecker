@@ -13,7 +13,7 @@ public class GoogleChatWebhookBodyFormatter : IWebhookBodyFormatter
             : "**REDACTED**";
 
         // Short link label for very long URLs.
-        string endpoint = $"<{context.Url}|Open endpoint>";
+        string endpoint = $"<{context.Url}|{context.ServiceName} endpoint>";
 
         return $@"
 Service: {context.ServiceName}
