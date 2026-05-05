@@ -1,13 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Net.Http;
-using System.Text;
-using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ServiceStatusChecker.Models;
+using ServiceStatusChecker.Notifiers;
 using ServiceStatusChecker.State;
 
 namespace ServiceStatusChecker.Services;
@@ -17,39 +15,28 @@ public class MorningReportService
     private readonly JsonStateStore _stateStore;
     private readonly MorningReportStateStore _reportStateStore;
     private readonly MonitorConfigCollection _monitorConfig;
-    private readonly NotificationConfig _notificationConfig;
     private readonly MorningReportConfig _reportConfig;
-    private readonly IHttpClientFactory _httpClientFactory;
+    
+    // --> CHANGED TO GENERIC INTERFACE
+    private readonly IEnumerable<INotifier<MorningReportMessageContext>> _notifiers; 
     private readonly ILogger<MorningReportService> _logger;
-    private readonly IReadOnlyDictionary<string, IMorningReportFormatter> _formatters;
-    private readonly IMorningReportFormatter _defaultFormatter;
 
     public MorningReportService(
         JsonStateStore stateStore,
         MorningReportStateStore reportStateStore,
         IOptions<MonitorConfigCollection> monitorOptions,
-        IOptions<NotificationConfig> notificationOptions,
         IOptions<MorningReportConfig> reportOptions,
-        IEnumerable<IMorningReportFormatter> formatters,
-        IHttpClientFactory httpClientFactory,
+        IEnumerable<INotifier<MorningReportMessageContext>> notifiers, // --> CHANGED TO GENERIC INTERFACE
         ILogger<MorningReportService> logger)
     {
         _stateStore = stateStore;
         _reportStateStore = reportStateStore;
         _monitorConfig = monitorOptions.Value;
-        _notificationConfig = notificationOptions.Value;
         _reportConfig = reportOptions.Value;
-        _httpClientFactory = httpClientFactory;
+        _notifiers = notifiers;
         _logger = logger;
-        _formatters = formatters.ToDictionary(f => f.Name, StringComparer.OrdinalIgnoreCase);
-        if (!_formatters.TryGetValue("default", out _defaultFormatter!))
-            throw new InvalidOperationException("No morning report formatter named 'default' is registered.");
     }
 
-    /// <summary>
-    /// Sends morning report if not already sent today.
-    /// Returns true if a report was sent.
-    /// </summary>
     public async Task<bool> SendIfDueAsync()
     {
         if (!_reportConfig.Enabled)
@@ -68,10 +55,7 @@ public class MorningReportService
         return true;
     }
 
-    /// <summary>
-    /// Sends morning report unconditionally (called by scheduled job).
-    /// </summary>
-    public async Task SendScheduledReportAsync()
+    public virtual async Task SendScheduledReportAsync()
     {
         if (!_reportConfig.Enabled)
             return;
@@ -91,29 +75,6 @@ public class MorningReportService
             return;
         }
 
-        var sb = new StringBuilder();
-        sb.AppendLine($"📋 Morning Service Status Report — {reportDate:dddd, MMMM d, yyyy}");
-        sb.AppendLine("Last status of monitored services from yesterday: ");
-        sb.AppendLine(new string('─', 50));
-
-        foreach (var monitor in monitors)
-        {
-            ServiceState state = _stateStore.Get(monitor.Name);
-            string icon = state switch
-            {
-                ServiceState.Up => "✅",
-                ServiceState.Down => "❌",
-                _ => "❓"
-            };
-            sb.AppendLine($"{icon} {monitor.Name}: {state}");
-            sb.AppendLine($"   URL: {monitor.Url}");
-        }
-
-        sb.AppendLine(new string('─', 50));
-        sb.AppendLine($"Generated at: {DateTime.Now:u}");
-
-        string message = sb.ToString();
-
         var channels = _reportConfig.Notify;
         if (channels == null || channels.Length == 0)
         {
@@ -122,7 +83,6 @@ public class MorningReportService
             return;
         }
 
-        var tasks = new List<Task>();
         var monitorSnapshots = monitors.Select(m => new MorningReportMonitorSnapshot(
             m.Name,
             m.Url,
@@ -135,14 +95,17 @@ public class MorningReportService
             monitorSnapshots
         );
 
+        var tasks = new List<Task>();
         foreach (var channel in channels)
         {
-            if (_notificationConfig.Webhooks.TryGetValue(channel, out var webhook) &&
-                !string.IsNullOrWhiteSpace(webhook.WebhookUrl))
+            var targetNotifier = _notifiers.FirstOrDefault(n => n.Handles.Contains(channel));
+            if (targetNotifier != null)
             {
-                var formatter = ResolveFormatter(channel, webhook.Formatter);
-                string formattedMessage = formatter.Format(reportContext);
-                tasks.Add(SendWebhookAsync(channel, webhook.WebhookUrl, formattedMessage));
+                tasks.Add(targetNotifier.NotifyAsync(reportContext, channel));
+            }
+            else
+            {
+                _logger.LogWarning("No capable notifier found for morning report channel '{Channel}'", channel);
             }
         }
 
@@ -151,38 +114,4 @@ public class MorningReportService
         _reportStateStore.SetLastReportDate(reportDate);
         _logger.LogInformation("Morning report sent and state recorded for {Date}", reportDate);
     }
-
-    private async Task SendWebhookAsync(string channel, string url, string message)
-    {
-        try
-        {
-            var client = _httpClientFactory.CreateClient();
-            var payload = JsonSerializer.Serialize(new { text = message });
-            using var content = new StringContent(payload, Encoding.UTF8, "application/json");
-            var response = await client.PostAsync(url, content);
-
-            if (!response.IsSuccessStatusCode)
-                _logger.LogError("Morning report webhook '{Channel}' failed with status {Status}", channel, response.StatusCode);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Morning report webhook '{Channel}' threw an exception", channel);
-        }
-    }
-    
-    private IMorningReportFormatter ResolveFormatter(string channel, string? formatterName)
-    {
-        if (string.IsNullOrWhiteSpace(formatterName))
-            return _defaultFormatter;
-    
-        if (_formatters.TryGetValue(formatterName, out var formatter))
-            return formatter;
-    
-        _logger.LogWarning(
-            "Morning report formatter '{Formatter}' not found for channel '{Channel}'. Falling back to default.",
-            formatterName, channel);
-    
-        return _defaultFormatter;
-    }
-    
 }

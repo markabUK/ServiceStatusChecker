@@ -1,10 +1,10 @@
 using ServiceStatusChecker.Models;
 
-namespace ServiceStatusChecker.Notifiers;
+namespace ServiceStatusChecker.Notifiers.Formatters;
 
-public class DefaultWebhookBodyFormatter : IWebhookBodyFormatter
+public class GoogleChatWebhookBodyFormatter : IWebhookBodyFormatter
 {
-    public string Name => "default";
+    public string Name => "google-chat";
 
     public string Format(NotificationContext context)
     {
@@ -12,9 +12,12 @@ public class DefaultWebhookBodyFormatter : IWebhookBodyFormatter
             ? (context.ResponseBody ?? "(empty)")
             : "**REDACTED**";
 
+        // Short link label for very long URLs.
+        string endpoint = $"<{context.Url}|{context.ServiceName} endpoint>";
+
         return $@"
 Service: {context.ServiceName}
-URL: {context.Url}
+Endpoint: {endpoint}
 Status: {(context.IsUp ? "UP" : "DOWN")}
 Time: {context.Timestamp:u}
 

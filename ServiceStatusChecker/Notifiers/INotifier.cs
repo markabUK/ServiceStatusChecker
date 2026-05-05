@@ -1,14 +1,12 @@
 using System.Collections.Generic;
 using System.Threading.Tasks;
-using ServiceStatusChecker.Models;
 
 namespace ServiceStatusChecker.Notifiers;
 
-public interface INotifier
+public interface INotifier<in TContext>
 {
-
-
     IReadOnlyCollection<string> Handles { get; }
-    Task NotifyAsync(NotificationContext context, string channel);
     string Name { get; }
+    
+    Task NotifyAsync(TContext context, string channel);
 }

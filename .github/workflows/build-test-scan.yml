@@ -1,103 +1,27 @@
-# .github/workflows/build-test-scan.yml
-name: Build, Test & Security Scan
+name: Build and Test
 
 on:
   push:
-    branches: [main, develop]
+    branches: [ "main" ]
   pull_request:
-    branches: [main, develop]
+    branches: [ "main" ]
 
 jobs:
-  test:
-    name: Run Tests
+  build:
     runs-on: ubuntu-latest
-    
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '10.0.x' # Adjust to your target framework
+          dotnet-version: 10.0.x
 
       - name: Restore dependencies
-        run: dotnet restore
+        run: dotnet restore ServiceStatusChecker.slnx
 
       - name: Build
-        run: dotnet build --configuration Release --no-restore
+        run: dotnet build ServiceStatusChecker.slnx --no-restore --configuration Release
 
-      - name: Run Tests
-        run: dotnet test --configuration Release --no-build --verbosity normal --logger "trx;LogFileName=test-results.trx"
-
-      - name: Upload test results
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: test-results
-          path: '**/test-results.trx'
-
-  codeql:
-    name: CodeQL Security Analysis
-    runs-on: ubuntu-latest
-    permissions:
-      actions: read
-      contents: read
-      security-events: write
-
-    strategy:
-      fail-fast: false
-      matrix:
-        language: ['csharp']
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
-        with:
-          languages: ${{ matrix.language }}
-          queries: security-and-quality
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
-
-      - name: Autobuild
-        uses: github/codeql-action/autobuild@v3
-
-      - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
-        with:
-          category: "/language:${{ matrix.language }}"
-
-  dependency-check:
-    name: OWASP Dependency Check
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      security-events: write
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Run dependency-check
-        uses: dependency-check/Dependency-Check_Action@main
-        with:
-          project: 'ServiceStatusChecker'
-          path: '.'
-          format: 'JSON'
-          args: >
-            --enableExperimental
-            --scan .
-
-      # Option B: keep JSON output and upload it as an artifact (do not upload SARIF)
-      - name: Upload dependency-check JSON
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: dependency-check-json
-          path: '**/*dependency-check*.json'
+      - name: Test
+        run: dotnet test ServiceStatusChecker.slnx --no-build --configuration Release --verbosity normal

@@ -1,7 +1,9 @@
 using System.Text;
+using ServiceStatusChecker.Models;
+using ServiceStatusChecker.Services;
 using ServiceStatusChecker.State;
 
-namespace ServiceStatusChecker.Services;
+namespace ServiceStatusChecker.Notifiers.Formatters;
 
 public class DefaultMorningReportFormatter : IMorningReportFormatter
 {

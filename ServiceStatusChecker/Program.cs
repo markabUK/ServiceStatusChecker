@@ -1,4 +1,5 @@
-﻿using System.IO;
+﻿using System;
+using System.IO;
 using System.Net.Http;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -11,6 +12,7 @@ using Quartz;
 using ServiceStatusChecker.Jobs;
 using ServiceStatusChecker.Models;
 using ServiceStatusChecker.Notifiers;
+using ServiceStatusChecker.Notifiers.Formatters;
 using ServiceStatusChecker.Services;
 using ServiceStatusChecker.State;
 
@@ -72,10 +74,40 @@ public static class Program
                 services.AddSingleton<IMorningReportFormatter, DefaultMorningReportFormatter>();
                 services.AddSingleton<IMorningReportFormatter, GoogleChatMorningReportFormatter>();
                 
+                var dynamicFormattersDir = Path.Combine(Directory.GetCurrentDirectory(), "Scripts");
+                if (Directory.Exists(dynamicFormattersDir))
+                {
+                    foreach (var file in Directory.GetFiles(dynamicFormattersDir, "*.js"))
+                    {
+                        string name = Path.GetFileNameWithoutExtension(file);
+                        string script = File.ReadAllText(file);
+
+                        // Assume scripts ending in '-morning' are morning report formatters
+                        if (name.EndsWith("-morning", StringComparison.OrdinalIgnoreCase))
+                        {
+                            string cleanName = name.Replace("-morning", "", StringComparison.OrdinalIgnoreCase);
+                            services.AddSingleton<IMorningReportFormatter>(new JintMorningReportFormatter(cleanName, script));
+                        }
+                        else
+                        {
+                            services.AddSingleton<IWebhookBodyFormatter>(new JintWebhookFormatter(name, script));
+                        }
+                    }
+                }
                 
-                // Notifiers
-                services.AddSingleton<INotifier, EmailNotifier>();
-                services.AddSingleton<INotifier, WebhookNotifier>();
+                // --> CHANGED: Register Notifiers for specific generic types
+                
+                // 1. Register concrete classes to exist as singletons
+                services.AddSingleton<EmailNotifier>();
+                services.AddSingleton<WebhookNotifier>();
+
+                // 2. Bind the status alert interfaces
+                services.AddSingleton<INotifier<NotificationContext>>(sp => sp.GetRequiredService<EmailNotifier>());
+                services.AddSingleton<INotifier<NotificationContext>>(sp => sp.GetRequiredService<WebhookNotifier>());
+
+                // 3. Bind the morning report interfaces
+                services.AddSingleton<INotifier<MorningReportMessageContext>>(sp => sp.GetRequiredService<EmailNotifier>());
+                services.AddSingleton<INotifier<MorningReportMessageContext>>(sp => sp.GetRequiredService<WebhookNotifier>());
 
                 // Monitor + Job
                 services.AddTransient<ServiceMonitor>();
@@ -85,10 +117,12 @@ public static class Program
                 services.AddSingleton<MorningReportStateStore>();
                 services.AddTransient<MorningReportService>();
                 services.AddTransient<MorningReportJob>();
-                
 
                 // QUARTZ 
-                services.AddQuartz();
+                services.AddQuartz(q =>
+                {
+                    q.SetProperty("quartz.threadPool.threadCount", "50"); 
+                });
                 services.AddQuartzHostedService(options => { options.WaitForJobsToComplete = true; });
 
                 // Your scheduler service

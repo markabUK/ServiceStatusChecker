@@ -18,7 +18,9 @@ public class ServiceMonitor
 {
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly JsonStateStore _stateStore;
-    private readonly IEnumerable<INotifier> _notifiers;
+    
+    // --> CHANGED TO GENERIC INTERFACE
+    private readonly IEnumerable<INotifier<NotificationContext>> _notifiers;
     private readonly MonitorConfigCollection _monitorConfigCollection;
     private readonly ILogger<ServiceMonitor> _logger;
     private readonly AsyncRetryPolicy<HttpResponseMessage> _retryPolicy;
@@ -27,7 +29,7 @@ public class ServiceMonitor
         IHttpClientFactory httpClientFactory,
         JsonStateStore stateStore,
         IOptions<MonitorConfigCollection> monitorConfigurationCollectionOptions,
-        IEnumerable<INotifier> notifiers,
+        IEnumerable<INotifier<NotificationContext>> notifiers, // --> CHANGED TO GENERIC INTERFACE
         ILogger<ServiceMonitor> logger)
     {
         _httpClientFactory = httpClientFactory;
@@ -50,7 +52,7 @@ public class ServiceMonitor
                 });
     }
 
-    public async Task ExecuteAsync(string monitorName)
+    public virtual async Task ExecuteAsync(string monitorName)
     {
         MonitorConfig? config = _monitorConfigCollection.MonitorConfig?
             .FirstOrDefault(m => m.Name == monitorName);
@@ -63,7 +65,6 @@ public class ServiceMonitor
 
         _logger.LogInformation("Running monitor {Name}", config.Name);
 
-        // NEW: get full result, not just bool
         HealthCheckResult result = await CheckHealthAsync(config);
 
         bool isUp = result.IsUp;

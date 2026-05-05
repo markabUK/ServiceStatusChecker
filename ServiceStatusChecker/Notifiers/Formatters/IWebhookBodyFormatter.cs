@@ -1,6 +1,6 @@
 using ServiceStatusChecker.Models;
 
-namespace ServiceStatusChecker.Notifiers;
+namespace ServiceStatusChecker.Notifiers.Formatters;
 
 public interface IWebhookBodyFormatter
 {

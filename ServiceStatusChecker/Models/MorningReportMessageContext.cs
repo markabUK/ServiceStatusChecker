@@ -1,9 +1,10 @@
 // ServiceStatusChecker/Services/MorningReportMessageContext.cs
+
 using System;
 using System.Collections.Generic;
 using ServiceStatusChecker.State;
 
-namespace ServiceStatusChecker.Services;
+namespace ServiceStatusChecker.Models;
 
 public record MorningReportMonitorSnapshot(
     string Name,
