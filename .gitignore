@@ -4,3 +4,22 @@ ServiceStatusChecker/appsettings.json
 ServiceStatusChecker/state.json
 ServiceStatusChecker/obj
 ServiceStatusChecker/morning_report_state.json
+
+
+**/obj
+**/bin
+**/publish
+**/TestResults
+**/coverage
+
+publish/
+*.zip
+*.tar.gz
+*.trx
+
+# Test results
+TestResults/
+
+# Test coverage
+coverage/
+*.coverage

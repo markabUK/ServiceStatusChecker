@@ -1,3 +1,13 @@
 <Solution>
+  <Project Path="ServiceStatusChecker.Tests/ServiceStatusChecker.Tests.csproj" />
   <Project Path="ServiceStatusChecker/ServiceStatusChecker.csproj" />
+  <Folder Name="/Solution Items/">
+    <File Path=".gitignore" />
+    <File Path="readme.md" />
+  </Folder>
+  <Folder Name="/GitHub Workflows Items/">
+    <File Path=".github/workflows/build-test-scan.yml" />
+    <File Path=".github/workflows/build-release.yml" />
+    <File Path=".github/workflows/security.yml" />
+  </Folder>
 </Solution>

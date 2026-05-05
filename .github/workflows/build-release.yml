@@ -1,0 +1,129 @@
+# .github/workflows/build-release.yml
+name: Build & Release (Multi-OS)
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'  # Trigger on version tags
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  build:
+    name: Build ${{ matrix.rid }} - ${{ matrix.os }}
+    runs-on: ${{ matrix.runner }}
+    
+    strategy:
+      matrix:
+        include:
+          - rid: win-x64
+            os: Windows
+            runner: windows-latest
+            artifact_name: ServiceStatusChecker-win-x64.zip
+
+          - rid: linux-x64
+            os: Linux (x64)
+            runner: ubuntu-latest
+            artifact_name: ServiceStatusChecker-linux-x64.tar.gz
+
+          - rid: linux-arm64
+            os: Linux (ARM64)
+            runner: ubuntu-latest
+            artifact_name: ServiceStatusChecker-linux-arm64.tar.gz
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build (Release)
+        run: dotnet build --configuration Release --no-restore
+
+      - name: Publish standalone - ${{ matrix.rid }}
+        run: dotnet publish ServiceStatusChecker/ServiceStatusChecker.csproj `
+          --configuration Release `
+          --runtime ${{ matrix.rid }} `
+          --self-contained `
+          --output ./publish/${{ matrix.rid }} `
+          -p:PublishSingleFile=true `
+          -p:PublishTrimmed=false `
+          -p:PublishReadyToRun=true
+
+      - name: Create package (Windows)
+        if: matrix.os == 'Windows'
+        shell: powershell
+        run: |
+          cd publish/${{ matrix.rid }}
+          Compress-Archive -Path * -DestinationPath ../${{ matrix.artifact_name }}
+          cd ../..
+          echo "ARTIFACT_PATH=publish/${{ matrix.artifact_name }}" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Create package (Linux)
+        if: matrix.os != 'Windows'
+        shell: bash
+        run: |
+          cd publish/${{ matrix.rid }}
+          tar -czf ../${{ matrix.artifact_name }} *
+          cd ../..
+          echo "ARTIFACT_PATH=publish/${{ matrix.artifact_name }}" >> $GITHUB_ENV
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.rid }}-release
+          path: ${{ env.ARTIFACT_PATH }}
+          retention-days: 30
+
+  create-release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release-assets
+          find artifacts -type f -name "*.zip" -o -name "*.tar.gz" | while read f; do
+            cp "$f" release-assets/
+          done
+
+      - name: Create Release
+        uses: ncipollo/release-action@v1
+        with:
+          artifacts: 'release-assets/*'
+          token: ${{ secrets.GITHUB_TOKEN }}
+          draft: false
+          prerelease: ${{ contains(github.ref, 'rc') || contains(github.ref, 'beta') || contains(github.ref, 'alpha') }}
+          generateReleaseNotes: true
+          body: |
+            ## Release: ${{ github.ref_name }}
+            
+            ### Artifacts
+            - **Windows x64**: ServiceStatusChecker-win-x64.zip
+            - **Linux x64**: ServiceStatusChecker-linux-x64.tar.gz
+            - **Linux ARM64**: ServiceStatusChecker-linux-arm64.tar.gz
+            
+            ### Installation
+            Extract the archive and run:
+            - **Windows**: `ServiceStatusChecker.exe`
+            - **Linux**: `./ServiceStatusChecker`
+            
+            ### Configuration
+            Update `appsettings.json` before running. See [README.md](README.md) for configuration details.
