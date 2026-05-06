@@ -14,12 +14,10 @@ using ServiceStatusChecker.State;
 
 namespace ServiceStatusChecker.Services;
 
-public class ServiceMonitor: IServiceMonitor
+public class ServiceMonitor : IServiceMonitor
 {
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly JsonStateStore _stateStore;
-    
-    // --> CHANGED TO GENERIC INTERFACE
     private readonly IEnumerable<INotifier<NotificationContext>> _notifiers;
     private readonly MonitorConfigCollection _monitorConfigCollection;
     private readonly ILogger<ServiceMonitor> _logger;
@@ -29,7 +27,7 @@ public class ServiceMonitor: IServiceMonitor
         IHttpClientFactory httpClientFactory,
         JsonStateStore stateStore,
         IOptions<MonitorConfigCollection> monitorConfigurationCollectionOptions,
-        IEnumerable<INotifier<NotificationContext>> notifiers, // --> CHANGED TO GENERIC INTERFACE
+        IEnumerable<INotifier<NotificationContext>> notifiers,
         ILogger<ServiceMonitor> logger)
     {
         _httpClientFactory = httpClientFactory;
@@ -48,86 +46,80 @@ public class ServiceMonitor: IServiceMonitor
                 {
                     _logger.LogWarning("Retry {Retry} for monitor {MonitorName}. Delay {Delay}.",
                         retryCount, context["MonitorName"], timespan);
-
                 });
     }
 
     public virtual async Task ExecuteAsync(string monitorName)
     {
-        MonitorConfig? config = _monitorConfigCollection.MonitorConfig?
-            .FirstOrDefault(m => m.Name == monitorName);
-
-        if (config == null)
+        try
         {
-            _logger.LogWarning("No configuration found for monitor {MonitorName}", monitorName);
-            return;
+            MonitorConfig? config = _monitorConfigCollection.MonitorConfig?
+                .FirstOrDefault(m => m.Name == monitorName);
+
+            if (config == null)
+            {
+                _logger.LogWarning("No configuration found for monitor {MonitorName}", monitorName);
+                return;
+            }
+
+            _logger.LogInformation("Running monitor {Name}", config.Name);
+
+            HealthCheckResult result = await CheckHealthAsync(config);
+            bool isUp = result.IsUp;
+
+            ServiceState previous = _stateStore.Get(config.Name);
+            ServiceState current = isUp ? ServiceState.Up : ServiceState.Down;
+
+            if (current != previous)
+            {
+                _logger.LogInformation("{Name} transitioned from {Prev} to {Curr}. Sending notification.",
+                    config.Name, previous, current);
+
+                await NotifyAsync(config, result, isUp);
+            }
+            else
+            {
+                _logger.LogInformation("State unchanged for {Name}: still {State}.", config.Name, current);
+            }
+
+            _stateStore.Set(config.Name, current);
         }
-
-        _logger.LogInformation("Running monitor {Name}", config.Name);
-
-        HealthCheckResult result = await CheckHealthAsync(config);
-
-        bool isUp = result.IsUp;
-
-        ServiceState previous = _stateStore.Get(config.Name);
-        ServiceState current = isUp ? ServiceState.Up : ServiceState.Down;
-
-        if (current == ServiceState.Down && previous != ServiceState.Down)
+        catch (Exception ex)
         {
-            _logger.LogInformation("{Name} transitioned from {Prev} to DOWN. Sending notification.",
-                config.Name, previous);
-
-            await NotifyAsync(config, result, isUp: false);
+            // Global safety catch to ensure Quartz doesn't crash the thread
+            _logger.LogError(ex, "An unhandled error occurred while executing monitor {Name}", monitorName);
         }
-        else if (current == ServiceState.Up && previous == ServiceState.Down)
-        {
-            _logger.LogInformation("{Name} transitioned from DOWN to UP. Sending notification.",
-                config.Name);
-
-            await NotifyAsync(config, result, isUp: true);
-        }
-        else
-        {
-            _logger.LogInformation(
-                "State unchanged for {Name}: still {State}. No notification sent.",
-                config.Name, current);
-        }
-
-        _stateStore.Set(config.Name, current);
     }
 
     private async Task<HealthCheckResult> CheckHealthAsync(MonitorConfig config)
     {
         _logger.LogInformation("Checking {Url}", config.Url);
         string clientName = config.AllowInsecureHttps ? "HealthCheckInsecure" : "HealthCheck";
-
         HttpClient client = _httpClientFactory.CreateClient(clientName);
 
         try
         {
             HttpResponseMessage response = await _retryPolicy.ExecuteAsync(
-                async _ =>
+                async (context, token) =>
                 {
                     using var request = new HttpRequestMessage(HttpMethod.Get, config.Url);
-                    foreach (var header in config.Headers)
+                    if (config.Headers != null)
                     {
-                        if (!request.Headers.TryAddWithoutValidation(header.Key, header.Value))
+                        foreach (var header in config.Headers)
                         {
-                            _logger.LogWarning(
-                                "Skipping invalid header '{Header}' for monitor {MonitorName}",
-                                header.Key, config.Name);
+                            if (!request.Headers.TryAddWithoutValidation(header.Key, header.Value))
+                            {
+                                _logger.LogWarning("Invalid header '{Header}' for monitor {MonitorName}", header.Key, config.Name);
+                            }
                         }
                     }
-                    return await client.SendAsync(request);
+                    return await client.SendAsync(request, token);
                 },
-                new Context("HealthCheck")
-                {
-                    ["MonitorName"] = config.Name
-                });
+                new Context("HealthCheck") { ["MonitorName"] = config.Name },
+                CancellationToken.None);
 
             string? body = null;
-
-            if (!response.IsSuccessStatusCode)
+            if (!response.IsSuccessStatusCode && config.IncludeResponseBody)
             {
                 body = await response.Content.ReadAsStringAsync();
             }
@@ -142,18 +134,14 @@ public class ServiceMonitor: IServiceMonitor
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Health check failed for {Url}", config.Url);
-
-            return new HealthCheckResult(
-                false,
-                ex.Message,
-                null,
-                null
-            );
+            return new HealthCheckResult(false, ex.Message, null, null);
         }
     }
 
     private async Task NotifyAsync(MonitorConfig config, HealthCheckResult result, bool isUp)
     {
+        if (config.Notify == null || !config.Notify.Any()) return;
+
         var context = new NotificationContext(
             ServiceName: config.Name,
             Url: config.Url,
@@ -167,9 +155,6 @@ public class ServiceMonitor: IServiceMonitor
 
         _logger.LogInformation("Sending notifications for {Name}", config.Name);
 
-        if (config.Notify == null || config.Notify.Length == 0)
-            return;
-
         var tasks = config.Notify.Select(async channel =>
         {
             var notifier = _notifiers.FirstOrDefault(n => n.Handles.Contains(channel));
@@ -182,19 +167,13 @@ public class ServiceMonitor: IServiceMonitor
 
             try
             {
-                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                // Ensure a slow notifier doesn't hang the whole monitoring loop
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
                 await notifier.NotifyAsync(context, channel).WaitAsync(cts.Token);
-            }
-            catch (OperationCanceledException)
-            {
-                _logger.LogError("Notifier for {Channel} timed out for {ServiceName}",
-                    channel, config.Name);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex,
-                    "Notifier for {Channel} failed for {ServiceName}",
-                    channel, config.Name);
+                _logger.LogError(ex, "Notifier for {Channel} failed for {ServiceName}", channel, config.Name);
             }
         });
 

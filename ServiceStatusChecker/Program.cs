@@ -80,22 +80,28 @@ public static class Program
                 {
                     foreach (var file in Directory.GetFiles(dynamicFormattersDir, "*.js"))
                     {
-                        string name = Path.GetFileNameWithoutExtension(file);
-                        string script = File.ReadAllText(file);
+                        try 
+                        {
+                            string name = Path.GetFileNameWithoutExtension(file);
+                            string script = File.ReadAllText(file);
 
-                        // Assume scripts ending in '-morning' are morning report formatters
-                        if (name.EndsWith("-morning", StringComparison.OrdinalIgnoreCase))
-                        {
-                            string cleanName = name.Replace("-morning", "", StringComparison.OrdinalIgnoreCase);
-                            services.AddSingleton<IMorningReportFormatter>(new JintMorningReportFormatter(cleanName, script));
+                            if (name.EndsWith("-morning", StringComparison.OrdinalIgnoreCase))
+                            {
+                                string cleanName = name.Replace("-morning", "", StringComparison.OrdinalIgnoreCase);
+                                services.AddSingleton<IMorningReportFormatter>(new JintMorningReportFormatter(cleanName, script));
+                            }
+                            else
+                            {
+                                services.AddSingleton<IWebhookBodyFormatter>(new JintWebhookFormatter(name, script));
+                            }
                         }
-                        else
+                        catch (Exception ex)
                         {
-                            services.AddSingleton<IWebhookBodyFormatter>(new JintWebhookFormatter(name, script));
+                            // Log error but continue loading other scripts/services
+                            Console.WriteLine($"Error loading dynamic script {file}: {ex.Message}");
                         }
                     }
                 }
-                
                 // --> CHANGED: Register Notifiers for specific generic types
                 
                 // 1. Register concrete classes to exist as singletons
