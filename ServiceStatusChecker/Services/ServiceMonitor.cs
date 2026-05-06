@@ -14,7 +14,7 @@ using ServiceStatusChecker.State;
 
 namespace ServiceStatusChecker.Services;
 
-public class ServiceMonitor
+public class ServiceMonitor: IServiceMonitor
 {
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly JsonStateStore _stateStore;

@@ -20,13 +20,13 @@ public class MonitorSchedulerHostedService : IHostedService
     private readonly ILogger<MonitorSchedulerHostedService> _logger;
     private IScheduler? _scheduler;
     private IDisposable? _changeSubscription;
-    private readonly MorningReportService _morningReportService;
+    private readonly IMorningReportService _morningReportService;
     private readonly IOptionsMonitor<MorningReportConfig> _morningReportConfig;
 
     public MonitorSchedulerHostedService(
         ISchedulerFactory schedulerFactory,
         IOptionsMonitor<MonitorConfigCollection> monitorOptions,
-        MorningReportService morningReportService,
+        IMorningReportService morningReportService,
         IOptionsMonitor<MorningReportConfig> morningReportConfig,
         ILogger<MonitorSchedulerHostedService> logger)
     {

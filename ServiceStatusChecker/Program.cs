@@ -74,7 +74,8 @@ public static class Program
                 services.AddSingleton<IMorningReportFormatter, DefaultMorningReportFormatter>();
                 services.AddSingleton<IMorningReportFormatter, GoogleChatMorningReportFormatter>();
                 
-                var dynamicFormattersDir = Path.Combine(Directory.GetCurrentDirectory(), "Scripts");
+                var appDir = AppDomain.CurrentDomain.BaseDirectory;
+                var dynamicFormattersDir = Path.Combine(appDir, "Scripts");
                 if (Directory.Exists(dynamicFormattersDir))
                 {
                     foreach (var file in Directory.GetFiles(dynamicFormattersDir, "*.js"))
@@ -110,12 +111,12 @@ public static class Program
                 services.AddSingleton<INotifier<MorningReportMessageContext>>(sp => sp.GetRequiredService<WebhookNotifier>());
 
                 // Monitor + Job
-                services.AddTransient<ServiceMonitor>();
+                services.AddTransient<IServiceMonitor, ServiceMonitor>();
                 services.AddTransient<MonitorJob>();
                 
                 services.Configure<MorningReportConfig>(configuration.GetSection("MorningReport"));
                 services.AddSingleton<MorningReportStateStore>();
-                services.AddTransient<MorningReportService>();
+                services.AddTransient<IMorningReportService, MorningReportService>();
                 services.AddTransient<MorningReportJob>();
 
                 // QUARTZ 

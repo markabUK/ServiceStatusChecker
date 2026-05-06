@@ -10,7 +10,7 @@ using ServiceStatusChecker.State;
 
 namespace ServiceStatusChecker.Services;
 
-public class MorningReportService
+public class MorningReportService: IMorningReportService
 {
     private readonly JsonStateStore _stateStore;
     private readonly MorningReportStateStore _reportStateStore;

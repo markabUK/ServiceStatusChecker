@@ -4,6 +4,7 @@
   <Folder Name="/Solution Items/">
     <File Path=".gitignore" />
     <File Path="readme.md" />
+    <File Path="version.txt"/>
   </Folder>
   <Folder Name="/GitHub Workflows Items/">
     <File Path=".github/workflows/build-test-scan.yml" />

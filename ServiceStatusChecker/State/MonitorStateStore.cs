@@ -5,8 +5,7 @@ namespace ServiceStatusChecker.State;
 
 public class MonitorStateStore
 {
-    private readonly ConcurrentDictionary<string, ServiceState> _states =
-        new ConcurrentDictionary<string, ServiceState>();
+    private readonly ConcurrentDictionary<string, ServiceState> _states = new();
 
     public ServiceState Get(string name)
     {
