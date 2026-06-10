@@ -7,10 +7,10 @@ namespace ServiceStatusChecker.Jobs;
 
 public class MonitorJob : IJob
 {
-    private readonly ServiceMonitor _monitor;
+    private readonly IServiceMonitor _monitor;
     private readonly ILogger<MonitorJob> _logger;
 
-    public MonitorJob(ServiceMonitor monitor, ILogger<MonitorJob> logger)
+    public MonitorJob(IServiceMonitor monitor, ILogger<MonitorJob> logger)
     {
         _monitor = monitor;
         _logger = logger;
