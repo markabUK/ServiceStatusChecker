@@ -7,10 +7,10 @@ namespace ServiceStatusChecker.Jobs;
 
 public class MorningReportJob : IJob
 {
-    private readonly MorningReportService _reportService;
+    private readonly IMorningReportService _reportService;
     private readonly ILogger<MorningReportJob> _logger;
 
-    public MorningReportJob(MorningReportService reportService, ILogger<MorningReportJob> logger)
+    public MorningReportJob(IMorningReportService reportService, ILogger<MorningReportJob> logger)
     {
         _reportService = reportService;
         _logger = logger;
